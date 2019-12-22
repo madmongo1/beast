@@ -21,11 +21,11 @@ enum
     SOCKS_VERSION_5 = 5
 };
 
-enum
+enum : char
 {
     SOCKS5_AUTH_NONE = 0x00,
     SOCKS5_AUTH = 0x02,
-    SOCKS5_AUTH_UNACCEPTABLE = 0xFF
+    SOCKS5_AUTH_UNACCEPTABLE = '\xFF'
 };
 
 enum

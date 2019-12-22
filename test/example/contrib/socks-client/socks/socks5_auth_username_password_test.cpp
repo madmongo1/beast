@@ -37,8 +37,10 @@ struct socks5_auth_username_password_test : beast::unit_test::suite
       beast::test::stream server_stream(ioc);
       beast::test::connect(client_stream, server_stream);
 
-      async_socks5_auth_username_password(client_stream, "bob", "password", beast::test::success_handler());
-
+      async_socks5_auth_username_password(client_stream,
+        "bob",
+        "password",
+        beast::test::success_handler());
       {
         run_until_condition(ioc, [&]{
           auto buf = server_stream.buffer();

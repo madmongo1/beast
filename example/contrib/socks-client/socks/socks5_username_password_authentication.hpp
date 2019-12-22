@@ -1,6 +1,11 @@
 #ifndef BOOST_BEAST_EXAMPLES_SOCKS_USERNAME_PASSWORD_AUTHENTICATION_HPP
 #define BOOST_BEAST_EXAMPLES_SOCKS_USERNAME_PASSWORD_AUTHENTICATION_HPP
 
+/**
+ * username/password authentication process for socks 5
+ * @see https://tools.ietf.org/html/rfc1929
+ */
+
 #include <socks/config.hpp>
 #include <socks/error.hpp>
 #include <boost/asio/async_result.hpp>
