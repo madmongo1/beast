@@ -264,31 +264,29 @@ writer(basic_fields const& f,
 
 //------------------------------------------------------------------------------
 
-template<class Allocator>
+template<class Fields>
 char*
-basic_fields<Allocator>::
-value_type::
+basic_fields_value<Fields>::
 data() const
 {
     return const_cast<char*>(
         reinterpret_cast<char const*>(
-            static_cast<element const*>(this) + 1));
+            static_cast<typename Fields::element const*>(this) + 1));
 }
 
-template<class Allocator>
+template<class Fields>
 net::const_buffer
-basic_fields<Allocator>::
-value_type::
+basic_fields_value<Fields>::
 buffer() const
 {
     return net::const_buffer{data(),
         static_cast<std::size_t>(off_) + len_ + 2};
 }
 
-template<class Allocator>
-basic_fields<Allocator>::
-value_type::
-value_type(field name,
+template<class Fields>
+basic_fields_value<Fields>::
+basic_fields_value(
+    field name,
     string_view sname, string_view value)
     : off_(static_cast<off_t>(sname.size() + 2))
     , len_(static_cast<off_t>(value.size()))
@@ -305,41 +303,37 @@ value_type(field name,
     value.copy(p + off_, value.size());
 }
 
-template<class Allocator>
+template<class Fields>
 field
-basic_fields<Allocator>::
-value_type::
+basic_fields_value<Fields>::
 name() const
 {
     return f_;
 }
 
-template<class Allocator>
+template<class Fields>
 string_view const
-basic_fields<Allocator>::
-value_type::
+basic_fields_value<Fields>::
 name_string() const
 {
     return {data(),
         static_cast<std::size_t>(off_ - 2)};
 }
 
-template<class Allocator>
+template<class Fields>
 string_view const
-basic_fields<Allocator>::
-value_type::
+basic_fields_value<Fields>::
 value() const
 {
     return {data() + off_,
         static_cast<std::size_t>(len_)};
 }
 
-template<class Allocator>
-basic_fields<Allocator>::
-element::
-element(field name,
+template<class Fields>
+basic_fields_element<Fields>::
+basic_fields_element(field name,
     string_view sname, string_view value)
-    : value_type(name, sname, value)
+    : Fields::value_type(name, sname, value)
 {
 }
 

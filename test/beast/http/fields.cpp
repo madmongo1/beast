@@ -989,8 +989,26 @@ public:
     }
 
     void
+    testStructuredBindings()
+    {
+#if defined(__cpp_structured_bindings)
+        auto f = fields();
+
+        f.set(field::accept, "*");
+
+        for (auto& [name, name_string, value] : f)
+        {
+            BEAST_EXPECT(name == field::accept);
+            BEAST_EXPECT(name_string == "accept");
+            BEAST_EXPECT(value == "*");
+        }
+#endif
+    }
+
+    void
     run() override
     {
+        testStructuredBindings();
         testMembers();
         testHeaders();
         testRFC2616();

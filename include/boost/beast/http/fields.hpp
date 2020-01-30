@@ -32,6 +32,98 @@ namespace boost {
 namespace beast {
 namespace http {
 
+// forward declaration
+template<class Allocator>
+class basic_fields;
+
+template<class Fields>
+class basic_fields_value
+{
+    friend Fields;
+
+    off_t off_;
+    off_t len_;
+    field f_;
+
+    char *
+    data() const;
+
+    net::const_buffer
+    buffer() const;
+
+protected:
+    basic_fields_value(
+        field name,
+        string_view sname,
+        string_view value);
+
+public:
+    /// Constructor (deleted)
+    basic_fields_value(basic_fields_value const&) = delete;
+
+    /// Assignment (deleted)
+    basic_fields_value &
+    operator=(basic_fields_value const &) = delete;
+
+    /// Returns the field enum, which can be @ref field::unknown
+    field
+    name() const;
+
+    /// Returns the field name as a string
+    string_view const
+    name_string() const;
+
+    /// Returns the value of the field
+    string_view const
+    value() const;
+
+};
+
+template<class Fields>
+struct basic_fields_element
+    : public boost::intrusive::list_base_hook<
+        boost::intrusive::link_mode<
+            boost::intrusive::normal_link>>
+      , public boost::intrusive::set_base_hook<
+        boost::intrusive::link_mode<
+            boost::intrusive::normal_link>>
+      , public basic_fields_value<Fields>
+{
+    basic_fields_element(field name,
+    string_view sname, string_view value);
+
+    /// Maps name() to the first element of structured binding
+    field
+    implement_get(std::integral_constant<std::size_t, 0>) const
+    {
+        return this->name();
+    }
+
+    /// Maps name_string() to the second element of structured binding
+    string_view
+    implement_get(std::integral_constant<std::size_t, 1>) const
+    {
+        return this->name_string();
+    }
+
+    /// Maps value() to the third element of structured binding
+    string_view
+    implement_get(std::integral_constant<std::size_t, 2>) const
+    {
+        return this->value();
+    }
+};
+
+// Add tuple accessors
+
+template<std::size_t I, class Fields>
+auto get(basic_fields_element<Fields> const& v)
+->
+decltype(v.implement_get(std::integral_constant<std::size_t, I>()))
+{
+    return v.implement_get(std::integral_constant<std::size_t, I>());
+}
+
 /** A container for storing HTTP header fields.
 
     This container is designed to store the field value pairs that make
@@ -61,8 +153,9 @@ class basic_fields
         "Allocator must use regular pointers");
 
     friend class fields_test; // for `header`
+    friend class basic_fields_value<basic_fields<Allocator>>;
 
-    struct element;
+    using element = basic_fields_element<basic_fields<Allocator>>;
 
     using off_t = std::uint16_t;
 
@@ -71,43 +164,7 @@ public:
     using allocator_type = Allocator;
 
     /// The type of element used to represent a field
-    class value_type
-    {
-        friend class basic_fields;
-
-        off_t off_;
-        off_t len_;
-        field f_;
-
-        char*
-        data() const;
-
-        net::const_buffer
-        buffer() const;
-
-    protected:
-        value_type(field name,
-            string_view sname, string_view value);
-
-    public:
-        /// Constructor (deleted)
-        value_type(value_type const&) = delete;
-
-        /// Assignment (deleted)
-        value_type& operator=(value_type const&) = delete;
-
-        /// Returns the field enum, which can be @ref field::unknown
-        field
-        name() const;
-
-        /// Returns the field name as a string
-        string_view const
-        name_string() const;
-
-        /// Returns the value of the field
-        string_view const
-        value() const;
-    };
+    using value_type = basic_fields_value<basic_fields<Allocator>>;
 
     /** A strictly less predicate for comparing keys, using a case-insensitive comparison.
 
@@ -167,18 +224,6 @@ public:
 #endif
 
 private:
-    struct element
-        : public boost::intrusive::list_base_hook<
-            boost::intrusive::link_mode<
-                boost::intrusive::normal_link>>
-        , public boost::intrusive::set_base_hook<
-            boost::intrusive::link_mode<
-                boost::intrusive::normal_link>>
-        , public value_type
-    {
-        element(field name,
-            string_view sname, string_view value);
-    };
 
     using list_t = typename boost::intrusive::make_list<
         element,
@@ -764,6 +809,23 @@ using fields = basic_fields<std::allocator<char>>;
 } // http
 } // beast
 } // boost
+
+namespace std {
+
+template<class Fields>
+struct tuple_size<boost::beast::http::basic_fields_element<Fields>>
+    : std::integral_constant<std::size_t, 3>
+{
+};
+
+template<std::size_t I, class Fields>
+struct tuple_element<I, boost::beast::http::basic_fields_element<Fields>>
+{
+    using type = decltype(get<I>(std::declval<boost::beast::http::basic_fields_element<Fields>>()));
+};
+
+}
+
 
 #include <boost/beast/http/impl/fields.hpp>
 
