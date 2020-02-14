@@ -192,21 +192,47 @@ struct discount
     }
 };
 
-template<class IsConst>
+template<class Allocator>
+struct element_store_traits
+{
+    using data_allocator_type = typename std::allocator_traits<Allocator>::template rebind_alloc <char>;
+    using element_allocator_type = typename std::allocator_traits<Allocator>::template rebind_alloc <storage_element>;
+    using storage_type = std::vector<storage_element, element_allocator_type>;
+    using storage_iterator = typename storage_type::iterator;
+};
+
+template<class RegionIterator>
 struct buffer_sequence_iterator
 {
     struct iterator_category  : std::random_access_iterator_tag {};
-    using value_type = typename std::conditional<IsConst::value, net::const_buffer, net::mutable_buffer>::type;
+
+    BOOST_STATIC_ASSERT(
+        std::is_same<
+            typename std::iterator_traits<RegionIterator>::value_type,
+            storage_element>::value);
+
+    using c_finger_value_type
+        = typename std::remove_reference<
+            decltype(*std::declval<RegionIterator>())>::type;
+
+    using value_type =
+        typename std::conditional<std::is_const<c_finger_value_type>::value,
+            net::const_buffer,
+            net::mutable_buffer>::type;
+
     using difference_type = std::ptrdiff_t;
+
     using pointer = typename std::add_pointer<value_type>::type;
+
     using reference = typename std::add_lvalue_reference<value_type>::type;
 
-    using element_ptr_type = typename std::conditional<IsConst::value, storage_element const*, storage_element*>::type;
-
-    buffer_sequence_iterator(element_ptr_type f, discount initial_discount, discount final_discount)
-        : f_(f)
-        , initial_discount_(initial_discount)
-        , final_discount_(final_discount)
+    buffer_sequence_iterator(
+        RegionIterator f,
+        discount initial_discount,
+        discount final_discount)
+    : f_(f)
+    , initial_discount_(initial_discount)
+    , final_discount_(final_discount)
     {
     }
 
@@ -227,7 +253,7 @@ struct buffer_sequence_iterator
         {
             using faux_pointer =
                 typename std::conditional<
-                    IsConst::value,
+                    std::is_const<c_finger_value_type>::value,
                     const char*,
                     char*>::type;
 
@@ -345,8 +371,8 @@ struct buffer_sequence_iterator
     }
 
     auto
-    element_ptr() const
-    -> element_ptr_type
+    finger_ptr() const
+    -> RegionIterator
     {
         return f_;
     }
@@ -364,7 +390,7 @@ struct buffer_sequence_iterator
     }
 
 private:
-    element_ptr_type f_;
+    RegionIterator f_;
     discount initial_discount_, final_discount_;
 };
 
@@ -380,14 +406,13 @@ struct storage_element_container
         std::is_nothrow_default_constructible<Allocator>::value;
 
     using allocator_type =
-        typename std::allocator_traits<Allocator>::
-            template rebind_alloc <storage_element>;
+        typename element_store_traits<Allocator>::element_allocator_type;
 
-    using storage_type = std::vector<storage_element, allocator_type>;
+    using storage_type =
+        typename element_store_traits<Allocator>::storage_type;
 
     using data_allocator_type =
-        typename std::allocator_traits<allocator_type>::
-            template rebind_alloc <char>;
+        typename element_store_traits<Allocator>::data_allocator_type;
 
     storage_element_container(
         std::size_t limit = std::numeric_limits<std::size_t>::max(),
@@ -421,19 +446,29 @@ struct storage_element_container
 
 
     /// Models either a MutableBufferSequence or a BufferSequence
-    template<class IsConst>
+    template<class RegionIterator>
     struct buffer_sequence
     {
-        using value_type = typename std::conditional<IsConst::value, net::const_buffer, net::mutable_buffer>::type;
-        using element_type = typename std::conditional<
-            IsConst::value,
-            storage_element const,
-            storage_element>::type;
+        BOOST_STATIC_ASSERT(
+            std::is_same<
+                typename std::iterator_traits<RegionIterator>::value_type,
+                storage_element>::value);
+        using is_const =
+            std::is_const<
+                typename std::remove_reference<
+                    decltype(*std::declval<RegionIterator>())>::type>;
 
-        using finger = typename std::add_pointer<element_type>::type;
-        using iterator = buffer_sequence_iterator<IsConst>;
+        using value_type =
+            typename std::conditional<
+                is_const::value,
+                net::const_buffer,
+                net::mutable_buffer>::type;
 
-        buffer_sequence(finger first, finger last) noexcept
+        using iterator = buffer_sequence_iterator<RegionIterator>;
+
+        buffer_sequence(
+            RegionIterator first,
+            RegionIterator last) noexcept
         : begin_(first,
                  discount { 0, 0 },
                  discount { 0, std::distance(first, last) - 1})
@@ -471,17 +506,23 @@ struct storage_element_container
             // special case for zero limit
             if (limit == 0)
             {
-                begin_ = end_ = iterator(nullptr, discount { 0, 0 }, discount { 0, 0 });
+                begin_ = end_ =
+                    iterator(
+                        begin_.finger_ptr(),
+                        discount { 0, 0 },
+                        discount { 0, 0 });
                 return;
             }
 
-            auto first = begin_.element_ptr();
+            auto first = begin_.finger_ptr();
+
             auto initial_discount = begin_.initial_discount();
+
             if (initial_discount.applies())
                 pos += initial_discount.amount;
             auto final_discount = begin_.final_discount();
 
-            auto last = end_.element_ptr();
+            auto last = end_.finger_ptr();
 
             while(first != last && pos)
             {
@@ -533,33 +574,34 @@ struct storage_element_container
         iterator begin_, end_;
     };
 
-    using mutable_buffer_sequence = buffer_sequence<std::false_type>;
-    using const_buffer_sequence = buffer_sequence<std::true_type>;
+    using mutable_buffer_sequence = buffer_sequence<typename storage_type::iterator>;
+
+    using const_buffer_sequence = buffer_sequence<typename storage_type::const_iterator>;
 
     auto make_sequence() const noexcept -> const_buffer_sequence
     {
-        return const_buffer_sequence(store_.data(), store_.data() + store_.size());
+        return const_buffer_sequence(store_.begin(), store_.end());
     }
 
     auto make_sequence() noexcept -> mutable_buffer_sequence
     {
-        return mutable_buffer_sequence(store_.data(), store_.data() + store_.size());
+        return mutable_buffer_sequence(store_.begin(), store_.end());
     }
 
-    template<class IsConst>
+    template<class RegionIterator>
     friend
     void
-    adjust(buffer_sequence<IsConst>& input, std::size_t pos, std::size_t limit)
+    adjust(buffer_sequence<RegionIterator>& input, std::size_t pos, std::size_t limit)
     {
         input.adjust(pos, limit);
     }
 
-    template<class IsConst>
+    template<class RegionIterator>
     friend
     auto
-    adjusted(buffer_sequence<IsConst> input, std::size_t pos, std::size_t limit)
+    adjusted(buffer_sequence<RegionIterator> input, std::size_t pos, std::size_t limit)
     ->
-    buffer_sequence<IsConst>
+    buffer_sequence<RegionIterator>
     {
         input.adjust(pos, limit);
         return input;
