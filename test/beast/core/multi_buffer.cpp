@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <iterator>
 #include <memory>
 #include <string>
 
@@ -51,6 +52,49 @@ public:
     {
         return buffers_to_string(mb1.data()) ==
             buffers_to_string(mb2.data());
+    }
+
+    void
+    testElementStorage()
+    {
+        using allocator_type = std::allocator<void>;
+        using element_container_type = storage_element_container<allocator_type>;
+
+        BEAST_EXPECT(net::is_const_buffer_sequence<typename element_container_type ::const_buffer_sequence>::value);
+        BEAST_EXPECT(net::is_mutable_buffer_sequence<typename element_container_type ::mutable_buffer_sequence>::value);
+
+        auto container = element_container_type();
+
+        auto ms = container.make_sequence();
+        BEAST_EXPECTS(typeid(ms) == typeid(element_container_type::mutable_buffer_sequence), typeid(ms).name());
+        BEAST_EXPECT(net::buffer_size(ms) == 0);
+
+        auto cs = static_cast<element_container_type const&>(container).make_sequence();
+        BEAST_EXPECTS(typeid(cs) == typeid(element_container_type::const_buffer_sequence), typeid(cs).name());
+        BEAST_EXPECT(net::buffer_size(cs) == 0);
+
+        container.add(1024);
+        ms = container.make_sequence();
+        BEAST_EXPECT(std::distance(ms.begin(), ms.end()) == 1);
+        BEAST_EXPECT(net::buffer_size(ms) == 1024);
+        container.add(1024);
+        ms = container.make_sequence();
+        BEAST_EXPECT(std::distance(ms.begin(), ms.end()) == 2);
+        BEAST_EXPECT(net::buffer_size(ms) == 2048);
+        container.consume(512);
+        ms = container.make_sequence();
+        BEAST_EXPECT(std::distance(ms.begin(), ms.end()) == 2);
+        BEAST_EXPECT(net::buffer_size(ms) == 1536);
+
+        adjust(ms, 0, 1536);
+        BEAST_EXPECT(std::distance(ms.begin(), ms.end()) == 2);
+        BEAST_EXPECT(net::buffer_size(ms) == 1536);
+
+        auto ms2 = adjusted(ms, 0, 0);
+        BEAST_EXPECT(std::distance(ms2.begin(), ms2.end()) == 0);
+        BEAST_EXPECT(net::buffer_size(ms2) == 0);
+
+
     }
 
     void
@@ -816,6 +860,7 @@ public:
     void
     run() override
     {
+        testElementStorage();
 #if 1
         testShrinkToFit();
         testDynamicBuffer();

@@ -14,15 +14,644 @@
 #include <boost/beast/core/detail/allocator.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/core/empty_value.hpp>
+#include <boost/core/exchange.hpp>
 #include <boost/intrusive/list.hpp>
 #include <boost/type_traits/type_with_alignment.hpp>
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <vector>
 #include <type_traits>
 
 namespace boost {
 namespace beast {
+
+
+struct storage_element
+{
+    char* begin_data_;
+    char* end_data_;
+    char* begin_used_;
+    char* end_used_;
+
+    template<class Allocator = std::allocator<char>>
+    storage_element(std::size_t required_capacity, Allocator alloc = Allocator())
+    : begin_data_(std::allocator_traits<Allocator>::allocate(alloc, required_capacity))
+    , end_data_(begin_data_ + required_capacity)
+    , begin_used_(begin_data_)
+    , end_used_(begin_data_)
+    {
+
+    }
+
+    storage_element(storage_element const&) = delete;
+
+    storage_element(storage_element && r) noexcept
+    : begin_data_(exchange(r.begin_data_, nullptr))
+    , end_data_(r.end_data_)
+    , begin_used_(r.begin_used_)
+    , end_used_(r.end_used_)
+    {
+    }
+
+    storage_element& operator=(storage_element const&) = delete;
+
+    storage_element& operator=(storage_element && r) noexcept
+    {
+        BOOST_ASSERT(begin_data_ == nullptr);
+        begin_data_ = exchange(r.begin_data_, nullptr);
+        end_data_ = r.end_data_;
+        begin_used_ = r.begin_used_;
+        end_used_ = r.end_used_;
+
+        return *this;
+    }
+
+
+    ~storage_element() noexcept
+    {
+        BOOST_ASSERT(!begin_data_);
+    }
+
+    char*
+    data() noexcept
+    {
+        return begin_used_;
+    }
+
+    char const*
+    data() const noexcept
+    {
+        return begin_used_;
+    }
+
+    std::size_t
+    size() const noexcept
+    {
+        return
+            static_cast<std::size_t>(
+                std::distance(begin_used_, end_used_));
+    }
+
+    std::size_t
+    available() const noexcept
+    {
+        return
+            static_cast<std::size_t>(
+                std::distance(end_used_, end_data_));
+    }
+
+    std::size_t
+    capacity() const noexcept
+    {
+        return
+            static_cast<std::size_t>(
+                std::distance(begin_data_, end_data_));
+    }
+
+    void
+    acquire(std::size_t n) noexcept
+    {
+        BOOST_ASSERT(available() >= n);
+        end_used_ += n;
+    }
+
+    void
+    consume(std::size_t n) noexcept
+    {
+        BOOST_ASSERT(size() >= n);
+        begin_used_ += n;
+    }
+
+    void
+    clear() noexcept
+    {
+        begin_used_ = end_used_ = data();
+    }
+
+    operator net::mutable_buffer()
+    {
+        return net::mutable_buffer(data(), size());
+    }
+
+    operator net::const_buffer() const
+    {
+        return net::const_buffer(data(), size());
+    }
+
+    // boilerplate
+
+    auto
+    data_elements()
+    ->
+    std::tuple<char*&, char*&, char*&, char*&>
+    {
+        return std::tie(begin_data_, end_data_, begin_used_, end_used_);
+    }
+
+    void swap(storage_element& r) noexcept
+    {
+        auto me = data_elements();
+        auto you = r.data_elements();
+        me.swap(you);
+    }
+
+    template<class Allocator = std::allocator<char>>
+    void
+    destroy(Allocator alloc = Allocator()) noexcept
+    {
+        if (begin_data_)
+        {
+            std::allocator_traits<Allocator>::
+                deallocate(
+                    alloc,
+                    begin_data_,
+                    capacity());
+            begin_data_ = nullptr;
+        }
+    }
+};
+
+struct discount
+{
+    std::size_t amount;
+    std::iterator_traits<storage_element*>::difference_type where;
+
+    discount&
+    operator+=(int n)
+    {
+        where -= n;
+        return *this;
+    }
+
+    bool applies() const
+    {
+        return
+            where == 0 &&
+            amount != 0;
+    }
+};
+
+template<class IsConst>
+struct buffer_sequence_iterator
+{
+    struct iterator_category  : std::random_access_iterator_tag {};
+    using value_type = typename std::conditional<IsConst::value, net::const_buffer, net::mutable_buffer>::type;
+    using difference_type = std::ptrdiff_t;
+    using pointer = typename std::add_pointer<value_type>::type;
+    using reference = typename std::add_lvalue_reference<value_type>::type;
+
+    using element_ptr_type = typename std::conditional<IsConst::value, storage_element const*, storage_element*>::type;
+
+    buffer_sequence_iterator(element_ptr_type f, discount initial_discount, discount final_discount)
+        : f_(f)
+        , initial_discount_(initial_discount)
+        , final_discount_(final_discount)
+    {
+    }
+
+    value_type
+    operator*() const
+    {
+        auto result = trim(value_type(*f_));
+        return result;
+    }
+
+    value_type
+    trim(value_type result) const
+    {
+        if (initial_discount_.applies())
+            result += initial_discount_.amount;
+
+        if (final_discount_.applies())
+        {
+            using faux_pointer =
+                typename std::conditional<
+                    IsConst::value,
+                    const char*,
+                    char*>::type;
+
+            result = value_type(
+                static_cast<faux_pointer>(result.data()) + final_discount_.amount,
+                result.size() - final_discount_.amount);
+        }
+
+        return result;
+    }
+
+    bool
+    operator==(buffer_sequence_iterator const& rhs) const noexcept
+    {
+        return f_ == rhs.f_;
+    }
+
+    bool
+    operator!=(buffer_sequence_iterator const& rhs) const noexcept
+    {
+        return f_ != rhs.f_;
+    }
+
+    auto
+    operator++() -> buffer_sequence_iterator&
+    {
+        return (*this) += 1;
+    }
+
+    auto
+    operator++(int) -> buffer_sequence_iterator
+    {
+        auto result = *this;
+        ++result;
+        return result;
+    }
+
+    auto operator+=(difference_type n) -> buffer_sequence_iterator&
+    {
+        f_ += n;
+        initial_discount_ += n;
+        final_discount_ += n;
+        return *this;
+    }
+
+    auto operator-=(difference_type n) -> buffer_sequence_iterator&
+    {
+        return (*this) += -n;
+    }
+
+    friend auto
+    operator+(buffer_sequence_iterator it, difference_type n) -> buffer_sequence_iterator
+    {
+        it += n;
+        return it;
+    }
+
+    friend auto
+    operator+(difference_type n, buffer_sequence_iterator it) -> buffer_sequence_iterator
+    {
+        it += n;
+        return it;
+    }
+
+    friend auto
+    operator-(buffer_sequence_iterator it, difference_type n) -> buffer_sequence_iterator
+    {
+        it -= n;
+        return it;
+    }
+
+    friend auto
+    operator-(buffer_sequence_iterator a, buffer_sequence_iterator const& b)
+    -> difference_type
+    {
+        return a.f_ - b.f_;
+    }
+
+    friend auto
+    operator-(difference_type n, buffer_sequence_iterator it) -> buffer_sequence_iterator
+    {
+        it -= n;
+        return it;
+    }
+
+    value_type operator[](std::size_t n) const
+    {
+        return *((*this) + n);
+    }
+
+    friend bool
+    operator<(buffer_sequence_iterator lhs, buffer_sequence_iterator rhs)
+    {
+        //note: reversed polarity
+        return lhs.f_ > rhs.f_;
+    }
+
+    friend bool
+    operator>(buffer_sequence_iterator lhs, buffer_sequence_iterator rhs)
+    {
+        //note: reversed polarity
+        return lhs.f_ < rhs.f_;
+    }
+
+    friend bool
+    operator>=(buffer_sequence_iterator lhs, buffer_sequence_iterator rhs)
+    {
+        return !(lhs < rhs);
+    }
+
+    friend bool
+    operator<=(buffer_sequence_iterator lhs, buffer_sequence_iterator rhs)
+    {
+        return !(lhs > rhs);
+    }
+
+    auto
+    element_ptr() const
+    -> element_ptr_type
+    {
+        return f_;
+    }
+
+    discount&
+    initial_discount()
+    {
+        return initial_discount_;
+    }
+
+    discount&
+    final_discount()
+    {
+        return final_discount_;
+    }
+
+private:
+    element_ptr_type f_;
+    discount initial_discount_, final_discount_;
+};
+
+template<class Allocator>
+struct storage_element_container
+{
+    // Fancy pointers are not supported
+    static_assert(std::is_pointer<typename
+                  std::allocator_traits<Allocator>::pointer>::value,
+                  "Allocator must use regular pointers");
+
+    static bool constexpr default_nothrow =
+        std::is_nothrow_default_constructible<Allocator>::value;
+
+    using allocator_type =
+        typename std::allocator_traits<Allocator>::
+            template rebind_alloc <storage_element>;
+
+    using storage_type = std::vector<storage_element, allocator_type>;
+
+    using data_allocator_type =
+        typename std::allocator_traits<allocator_type>::
+            template rebind_alloc <char>;
+
+    storage_element_container(
+        std::size_t limit = std::numeric_limits<std::size_t>::max(),
+        Allocator alloc = Allocator())
+    : store_(allocator_type(alloc))
+    , limit_(limit)
+    {
+    }
+
+    storage_element_container(storage_element_container&& r) noexcept
+    : store_(std::move(r.store_))
+    , limit_(r.limit_)
+    {
+    }
+
+    storage_element_container& operator=(storage_element_container&& r) noexcept
+    {
+        destroy();
+        store_ = std::move(r.store_);
+        limit_ = r.limit_;
+        return *this;
+    }
+
+    ~storage_element_container() noexcept
+    {
+        destroy();
+    }
+
+    storage_element_container(storage_element_container const& r) = delete;
+    storage_element_container& operator=(storage_element_container const& r) = delete;
+
+
+    /// Models either a MutableBufferSequence or a BufferSequence
+    template<class IsConst>
+    struct buffer_sequence
+    {
+        using value_type = typename std::conditional<IsConst::value, net::const_buffer, net::mutable_buffer>::type;
+        using element_type = typename std::conditional<
+            IsConst::value,
+            storage_element const,
+            storage_element>::type;
+
+        using finger = typename std::add_pointer<element_type>::type;
+        using iterator = buffer_sequence_iterator<IsConst>;
+
+        buffer_sequence(finger first, finger last) noexcept
+        : begin_(first,
+                 discount { 0, 0 },
+                 discount { 0, std::distance(first, last) - 1})
+        , end_(begin_)
+        {
+            end_ += std::distance(first, last);
+        }
+
+        iterator
+        begin() const noexcept
+        {
+            return begin_;
+        }
+
+        iterator
+        end() const noexcept
+        {
+            return end_;
+        }
+
+        /// \brief Adjust the buffer sequence so that is becomes a sub-sequence of itself
+        /// \param pos the position in the old sequence which will be represented by the first
+        ///            position of the resulting sequence
+        /// \param limit the maximum length of the resulting sequence
+        void adjust(std::size_t pos, std::size_t limit)
+        {
+            // short-circuit empty range
+            if (begin_ == end_)
+                return;
+
+            auto size = net::buffer_size(*this);
+            size = size > pos ? size - pos : 0;
+            limit = (std::min)(limit, size);
+
+            // special case for zero limit
+            if (limit == 0)
+            {
+                begin_ = end_ = iterator(nullptr, discount { 0, 0 }, discount { 0, 0 });
+                return;
+            }
+
+            auto first = begin_.element_ptr();
+            auto initial_discount = begin_.initial_discount();
+            if (initial_discount.applies())
+                pos += initial_discount.amount;
+            auto final_discount = begin_.final_discount();
+
+            auto last = end_.element_ptr();
+
+            while(first != last && pos)
+            {
+                if (first->size() < pos)
+                {
+                    pos -= first->size();
+                    ++first;
+                    initial_discount = discount { pos, 0 };
+                }
+                else
+                {
+                    initial_discount = discount { pos, 0 };
+                    pos = 0;
+                }
+            }
+
+            auto current = first;
+            auto current_discount = initial_discount;
+            auto current_size = [&]
+            {
+                auto size = current->size();
+                if (current_discount.applies())
+                    size -= current_discount.amount;
+                return size;
+            };
+
+            final_discount = discount { limit - current_size() , std::distance(first, current) };
+            while (current != last)
+            {
+                auto size = current_size();
+                if (limit <= size)
+                {
+                    final_discount = discount { size - limit , std::distance(first, current) };
+                    ++current;
+                    break;
+                }
+                else
+                {
+                    limit -= size;
+                    ++current;
+                }
+            }
+
+            begin_ = iterator(first, initial_discount, final_discount);
+            end_ = begin_ + std::distance(first, last);
+        }
+
+    private:
+        iterator begin_, end_;
+    };
+
+    using mutable_buffer_sequence = buffer_sequence<std::false_type>;
+    using const_buffer_sequence = buffer_sequence<std::true_type>;
+
+    auto make_sequence() const noexcept -> const_buffer_sequence
+    {
+        return const_buffer_sequence(store_.data(), store_.data() + store_.size());
+    }
+
+    auto make_sequence() noexcept -> mutable_buffer_sequence
+    {
+        return mutable_buffer_sequence(store_.data(), store_.data() + store_.size());
+    }
+
+    template<class IsConst>
+    friend
+    void
+    adjust(buffer_sequence<IsConst>& input, std::size_t pos, std::size_t limit)
+    {
+        input.adjust(pos, limit);
+    }
+
+    template<class IsConst>
+    friend
+    auto
+    adjusted(buffer_sequence<IsConst> input, std::size_t pos, std::size_t limit)
+    ->
+    buffer_sequence<IsConst>
+    {
+        input.adjust(pos, limit);
+        return input;
+    }
+
+    void
+    add(std::size_t required_space)
+    {
+        if (store_.size())
+        {
+            auto& last = *store_.end();
+            if (last.available() <= required_space)
+            {
+                last.acquire(required_space);
+                return;
+            }
+        }
+
+        if (required_space > min_block_size_)
+            min_block_size_ = round_up(required_space);
+
+        auto make_element = [&]
+        {
+            auto element = storage_element(min_block_size_, data_allocator_type(store_.get_allocator()));
+            element.acquire(required_space);
+            return element;
+        };
+
+        store_.push_back(make_element());
+    }
+
+    void
+    consume(std::size_t n)
+    {
+        auto iter = store_.begin();
+        while (n && iter != store_.end())
+        {
+            if (n >= iter->size())
+            {
+                n -= iter->size();
+                iter = erase_element(iter);
+            }
+            else
+            {
+                iter->consume(n);
+                n = 0;
+                // ++iter
+            }
+        }
+
+    }
+
+private:
+
+    data_allocator_type
+    element_allocator() const
+    {
+        return data_allocator_type(store_.get_allocator());
+    }
+
+    void
+    destroy()
+    {
+        auto alloc = data_allocator_type(store_.get_allocator());
+        for (auto& elem : store_)
+            elem.destroy(alloc);
+        store_.clear();
+    }
+
+    auto
+    erase_element(typename storage_type::iterator where)
+    -> typename storage_type::iterator
+    {
+        where->destroy(element_allocator());
+        return store_.erase(where);
+    }
+
+
+    static
+    std::size_t
+    round_up(std::size_t required)
+    {
+        // @todo: think of a strategy for sensibly rounding up the size of allocated blocks
+        return required;
+    }
+
+
+
+    storage_type store_;
+    std::size_t limit_;
+    std::size_t min_block_size_ = 4096;
+};
 
 /** A dynamic buffer providing sequences of variable length.
 
