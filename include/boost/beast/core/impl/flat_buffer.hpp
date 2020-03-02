@@ -538,6 +538,51 @@ alloc(std::size_t n)
     return alloc_traits::allocate(this->get(), n);
 }
 
+
+template<class Allocator>
+auto
+basic_flat_buffer<Allocator>::
+data_impl(std::size_t pos, std::size_t n)
+-> mutable_buffers_type
+{
+    auto tmp = data();
+    tmp += (std::min)(pos, tmp.size());
+    return mutable_buffers_type(tmp.data(),
+        (std::min)(n, tmp.size()));
+}
+
+template<class Allocator>
+auto
+basic_flat_buffer<Allocator>::
+data_impl(std::size_t pos, std::size_t n) const
+-> const_buffers_type
+{
+    auto tmp = data();
+    tmp += (std::min)(pos, tmp.size());
+    return const_buffers_type(tmp.data(),
+        (std::min)(n, tmp.size()));
+}
+
+template<class Allocator>
+auto
+basic_flat_buffer<Allocator>::
+shrink_impl(std::size_t n)
+-> void
+{
+    boost::ignore_unused(prepare(0));
+    out_ -= (std::min)(n, size());
+}
+
+namespace detail {
+
+template<class Allocator>
+struct is_dynamic_buffer_v0<basic_flat_buffer<Allocator>>
+: std::true_type
+{
+};
+
+}
+
 } // beast
 } // boost
 

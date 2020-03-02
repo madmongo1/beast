@@ -126,10 +126,38 @@ public:
         }
     }
 
+    void
+    testV2Interop()
+    {
+        test_dynamic_buffer_v0_v2_consistency<flat_static_buffer<8192>>();
+        test_dynamic_buffer_v0_v2_operation(flat_static_buffer<16>());
+
+        struct generator
+        {
+            static constexpr std::size_t size() { return 26; }
+            static flat_static_buffer<26> make_store() { return {}; }
+        };
+        test_v0_v2_data_rotations(generator());
+
+        struct gen2
+        {
+            flat_static_buffer<4096> store_;
+
+            auto
+            operator()()
+            -> detail::dynamic_buffer_v0_proxy<decltype(store_)>
+            {
+                return dynamic_buffer(store_);
+            }
+        };
+        test_v2_operation(gen2(), gen2());
+    }
+
     void run() override
     {
         testDynamicBuffer();
         testMembers();
+        testV2Interop();
     }
 };
 

@@ -814,6 +814,31 @@ public:
     }
 
     void
+    testV2Interop()
+    {
+        test_dynamic_buffer_v0_v2_consistency<multi_buffer>();
+        test_dynamic_buffer_v0_v2_operation(multi_buffer(16));
+
+        struct generator
+        {
+            static constexpr std::size_t size() { return 26; }
+            static multi_buffer make_store() { return multi_buffer(size()); }
+        };
+        test_v0_v2_data_rotations(generator());
+
+        struct generator2
+        {
+            multi_buffer store_;
+            detail::dynamic_buffer_v0_proxy<decltype(store_)>
+            operator()()
+            {
+                return dynamic_buffer(store_);
+            }
+        };
+        test_v2_operation(generator2(), generator2());
+    }
+
+    void
     run() override
     {
         testShrinkToFit();
@@ -821,6 +846,7 @@ public:
         testMembers();
         testMatrix1();
         testMatrix2();
+        testV2Interop();
     }
 };
 

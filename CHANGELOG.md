@@ -1,3 +1,9 @@
+Version XXX:
+
+* Add dynamic_buffer function
+
+--------------------------------------------------------------------------------
+
 Version 289:
 
 * Fix Host header in websocket examples

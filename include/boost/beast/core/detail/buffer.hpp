@@ -14,6 +14,7 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/optional.hpp>
 #include <stdexcept>
+#include <algorithm>
 
 namespace boost {
 namespace beast {
