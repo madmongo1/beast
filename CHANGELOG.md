@@ -1,3 +1,9 @@
+Version XXX:
+
+* Namespace qualify calls to UDTs
+
+--------------------------------------------------------------------------------
+
 Version 286:
 
 * Refactor multi_buffer
