@@ -1,3 +1,9 @@
+Version XXX:
+
+* Refactor composed operations in terms of async_compose
+
+--------------------------------------------------------------------------------
+
 Version 286:
 
 * Refactor multi_buffer
