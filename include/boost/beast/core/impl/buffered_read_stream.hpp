@@ -16,6 +16,7 @@
 #include <boost/beast/core/read_size.hpp>
 #include <boost/beast/core/stream_traits.hpp>
 #include <boost/beast/core/detail/is_invocable.hpp>
+#include <boost/asio/compose.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/throw_exception.hpp>
 
@@ -27,10 +28,8 @@ template<class Stream, class DynamicBuffer>
 struct buffered_read_stream<Stream, DynamicBuffer>::ops
 {
 
-template<class MutableBufferSequence, class Handler>
+template<class MutableBufferSequence>
 class read_op
-    : public async_base<Handler,
-    beast::executor_type<buffered_read_stream>>
 {
     buffered_read_stream& s_;
     MutableBufferSequence b_;
@@ -40,24 +39,20 @@ public:
     read_op(read_op&&) = default;
     read_op(read_op const&) = delete;
 
-    template<class Handler_>
     read_op(
-        Handler_&& h,
         buffered_read_stream& s,
         MutableBufferSequence const& b)
-        : async_base<
-            Handler, beast::executor_type<buffered_read_stream>>(
-                std::forward<Handler_>(h), s.get_executor())
-        , s_(s)
+        : s_(s)
         , b_(b)
     {
-        (*this)({}, 0);
     }
 
+    template<class Self>
     void
     operator()(
-        error_code ec,
-        std::size_t bytes_transferred)
+        Self& self,
+        error_code ec = {},
+        std::size_t bytes_transferred = 0)
     {
         // VFALCO TODO Rewrite this using reenter/yield
         switch(step_)
@@ -70,20 +65,20 @@ public:
                     // read (unbuffered)
                     step_ = 1;
                     return s_.next_layer_.async_read_some(
-                        b_, std::move(*this));
+                        b_, std::move(self));
                 }
                 // read
                 step_ = 2;
                 return s_.next_layer_.async_read_some(
                     s_.buffer_.prepare(read_size(
                         s_.buffer_, s_.capacity_)),
-                            std::move(*this));
+                            std::move(self));
             }
             step_ = 3;
             return net::post(
                 s_.get_executor(),
                 beast::bind_front_handler(
-                    std::move(*this), ec, 0));
+                    std::move(self), ec, 0));
 
         case 1:
             // upcall
@@ -99,32 +94,7 @@ public:
             s_.buffer_.consume(bytes_transferred);
             break;
         }
-        this->complete_now(ec, bytes_transferred);
-    }
-};
-
-struct run_read_op
-{
-    template<class ReadHandler, class Buffers>
-    void
-    operator()(
-        ReadHandler&& h,
-        buffered_read_stream* s,
-        Buffers const& b)
-    {
-        // If you get an error on the following line it means
-        // that your handler does not meet the documented type
-        // requirements for the handler.
-
-        static_assert(
-            beast::detail::is_invocable<ReadHandler,
-            void(error_code, std::size_t)>::value,
-            "ReadHandler type requirements not met");
-
-        read_op<
-            Buffers,
-            typename std::decay<ReadHandler>::type>(
-                std::forward<ReadHandler>(h), *s, b);
+        self.complete(ec, bytes_transferred);
     }
 };
 
@@ -227,13 +197,14 @@ async_read_some(
     if(buffer_.size() == 0 && capacity_ == 0)
         return next_layer_.async_read_some(buffers,
             std::forward<ReadHandler>(handler));
-    return net::async_initiate<
+    return net::async_compose<
         ReadHandler,
         void(error_code, std::size_t)>(
-            typename ops::run_read_op{},
+            typename ops::template read_op<MutableBufferSequence>(
+                *this,
+                buffers),
             handler,
-            this,
-            buffers);
+            *this);
 }
 
 } // beast
