@@ -615,11 +615,9 @@ public:
 //------------------------------------------------------------------------------
 
 template<class NextLayer, bool deflateSupported>
-template<class Handler,  class DynamicBuffer>
+template<class DynamicBuffer>
 class stream<NextLayer, deflateSupported>::read_op
-    : public beast::async_base<
-        Handler, beast::executor_type<stream>>
-    , public asio::coroutine
+    : public asio::coroutine
 {
     boost::weak_ptr<impl_type> wp_;
     DynamicBuffer& b_;
@@ -628,27 +626,56 @@ class stream<NextLayer, deflateSupported>::read_op
     bool some_;
 
 public:
-    template<class Handler_>
     read_op(
-        Handler_&& h,
         boost::shared_ptr<impl_type> const& sp,
         DynamicBuffer& b,
         std::size_t limit,
         bool some)
-        : async_base<Handler,
-            beast::executor_type<stream>>(
-                std::forward<Handler_>(h),
-                    sp->stream().get_executor())
-        , wp_(sp)
+        : wp_(sp)
         , b_(b)
         , limit_(limit ? limit : (
             std::numeric_limits<std::size_t>::max)())
         , some_(some)
     {
-        (*this)({}, 0, false);
     }
 
+
+    struct invoke_handler {};
+    template<class Self>
     void operator()(
+        Self& self,
+        invoke_handler,
+        error_code ec,
+        std::size_t bytes_transferred)
+    {
+        self.complete(ec, bytes_transferred);
+    }
+
+    template<class Self>
+    void try_complete(
+        Self& self,
+        bool cont,
+        error_code const& ec,
+        std::size_t bytes_written)
+    {
+        if (cont)
+            (*this)(
+                self,
+                invoke_handler(),
+                ec,
+                bytes_written);
+        else
+            net::post(
+                beast::bind_front_handler(
+                    std::move(self),
+                    invoke_handler(),
+                    ec,
+                    bytes_written));
+    }
+
+    template<class Self>
+    void operator()(
+        Self& self,
         error_code ec = {},
         std::size_t bytes_transferred = 0,
         bool cont = true)
@@ -659,7 +686,7 @@ public:
         {
             ec = net::error::operation_aborted;
             bytes_written_ = 0;
-            return this->complete(cont, ec, bytes_written_);
+            return try_complete(self, cont, ec, bytes_written_);
         }
         auto& impl = *sp;
         using mutable_buffers_type = typename
@@ -676,8 +703,8 @@ public:
                             ec, error::buffer_overflow);
                     if(impl.check_stop_now(ec))
                         goto upcall;
-                    read_some_op<read_op, mutable_buffers_type>(
-                        std::move(*this), sp, *mb);
+                    read_some_op<Self, mutable_buffers_type>(
+                        std::move(self), sp, *mb);
                 }
 
                 b_.commit(bytes_transferred);
@@ -688,14 +715,14 @@ public:
             while(! some_ && ! impl.rd_done);
 
         upcall:
-            this->complete(cont, ec, bytes_written_);
+            try_complete(self, cont, ec, bytes_written_);
         }
     }
 };
 
 template<class NextLayer, bool deflateSupported>
 struct stream<NextLayer, deflateSupported>::
-    run_read_some_op
+run_read_some_op
 {
     template<
         class ReadHandler,
@@ -721,41 +748,6 @@ struct stream<NextLayer, deflateSupported>::
                 std::forward<ReadHandler>(h),
                 sp,
                 b);
-    }
-};
-
-template<class NextLayer, bool deflateSupported>
-struct stream<NextLayer, deflateSupported>::
-    run_read_op
-{
-    template<
-        class ReadHandler,
-        class DynamicBuffer>
-    void
-    operator()(
-        ReadHandler&& h,
-        boost::shared_ptr<impl_type> const& sp,
-        DynamicBuffer* b,
-        std::size_t limit,
-        bool some)
-    {
-        // If you get an error on the following line it means
-        // that your handler does not meet the documented type
-        // requirements for the handler.
-
-        static_assert(
-            beast::detail::is_invocable<ReadHandler,
-                void(error_code, std::size_t)>::value,
-            "ReadHandler type requirements not met");
-
-        read_op<
-            typename std::decay<ReadHandler>::type,
-            DynamicBuffer>(
-                std::forward<ReadHandler>(h),
-                sp,
-                *b,
-                limit,
-                some);
     }
 };
 
@@ -812,15 +804,13 @@ async_read(DynamicBuffer& buffer, ReadHandler&& handler)
     static_assert(
         net::is_dynamic_buffer<DynamicBuffer>::value,
         "DynamicBuffer type requirements not met");
-    return net::async_initiate<
+    return net::async_compose<
         ReadHandler,
         void(error_code, std::size_t)>(
-            run_read_op{},
-            handler,
-            impl_,
-            &buffer,
-            0,
-            false);
+        read_op<DynamicBuffer>(
+            impl_, buffer, 0, false),
+        handler,
+        *this);
 }
 
 //------------------------------------------------------------------------------
@@ -889,15 +879,13 @@ async_read_some(
     static_assert(
         net::is_dynamic_buffer<DynamicBuffer>::value,
         "DynamicBuffer type requirements not met");
-    return net::async_initiate<
+    return net::async_compose<
         ReadHandler,
         void(error_code, std::size_t)>(
-            run_read_op{},
-            handler,
-            impl_,
-            &buffer,
-            limit,
-            true);
+        read_op<DynamicBuffer>(
+            impl_, buffer, limit, true),
+        handler,
+        *this);
 }
 
 //------------------------------------------------------------------------------
