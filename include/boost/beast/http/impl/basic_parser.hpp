@@ -57,6 +57,18 @@ put(ConstBufferSequence const& buffers,
 }
 
 template<bool isRequest>
+boost::optional<std::uint64_t>
+basic_parser<isRequest>::
+impl_content_length() const
+{
+    // don't pessimise possible NRVO
+    boost::optional<std::uint64_t> result;
+    if(f_ & flagContentLength)
+        result = len0_;
+    return result;
+}
+
+template<bool isRequest>
 template<class ConstBufferSequence>
 std::size_t
 basic_parser<isRequest>::

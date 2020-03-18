@@ -259,7 +259,10 @@ public:
             n = p.put(cb, ec);
             if(! ec)
                 p.put_eof(ec);
-            BEAST_EXPECTS(ec == result, ec.message());
+            if(!BEAST_EXPECTS(ec == result, ec.message()))
+            {
+                std::abort();
+            }
         }
         for(std::size_t i = 1; i < msg.size() - 1; ++i)
         {
@@ -692,6 +695,8 @@ public:
         parsegrind<P>(m("Content-LengtX: 0\r\n"),           expect_flags{*this, 0});
         parsegrind<P>(m("Content-Lengths: many\r\n"),       expect_flags{*this, 0});
         parsegrind<P>(m("Content: full\r\n"),               expect_flags{*this, 0});
+        parsegrind<P>(m("Content-Length: 0\r\n"
+                        "Content-Length: 0\r\n"),           expect_flags{*this, 0});
 
         failgrind<P>(c("\r\n"),                             error::bad_content_length);
         failgrind<P>(c("18446744073709551616\r\n"),         error::bad_content_length);
@@ -699,8 +704,8 @@ public:
         failgrind<P>(c("0 1\r\n"),                          error::bad_content_length);
         failgrind<P>(c(",\r\n"),                            error::bad_content_length);
         failgrind<P>(c("0,\r\n"),                           error::bad_content_length);
-        failgrind<P>(m(
-            "Content-Length: 0\r\nContent-Length: 0\r\n"),  error::bad_content_length);
+        failgrind<P>(m("Content-Length: 0\r\n"
+                        "Content-Length: 100\r\n"),         error::bad_content_length);
     }
 
     void

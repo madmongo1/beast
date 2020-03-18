@@ -358,6 +358,129 @@ public:
     }
 
     void
+    testMultipleContentLengthIssue1880()
+    {
+        {
+            // multiple contents lengths the same
+            const char header[] =
+                "HTTP/1.1 200 OK\r\n"
+                "Server: nginx\r\n"
+                "Date: Wed, 11 Mar 2020 17:18:19 GMT\r\n"
+                "Content-Type: application/octet-stream\r\n"
+                "Content-Length: 0\r\n"
+                "Connection: keep-alive\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Access-Control-Allow-Methods: GET, OPTIONS, POST\r\n"
+                "Access-Control-Allow-Headers: Authorization, Content-Type, Accept\r\n"
+                "Access-Control-Max-Age: 1728000\r\n"
+                "Access-Control-Allow-Credentials: true\r\n"
+                "Content-Length: 0\r\n"
+                "Content-Type: text/plain\r\n"
+                "\r\n";
+
+            boost::beast::http::response_parser<boost::beast::http::string_body> parser;
+            boost::beast::error_code ec;
+            parser.put(boost::asio::buffer(header, sizeof(header) - 1), ec);
+            BEAST_EXPECTS(!ec.failed(), ec.message());
+        }
+
+        {
+            // multiple contents lengths different
+            const char header[] =
+                "HTTP/1.1 200 OK\r\n"
+                "Server: nginx\r\n"
+                "Date: Wed, 11 Mar 2020 17:18:19 GMT\r\n"
+                "Content-Type: application/octet-stream\r\n"
+                "Content-Length: 0\r\n"
+                "Connection: keep-alive\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Access-Control-Allow-Methods: GET, OPTIONS, POST\r\n"
+                "Access-Control-Allow-Headers: Authorization, Content-Type, Accept\r\n"
+                "Access-Control-Max-Age: 1728000\r\n"
+                "Access-Control-Allow-Credentials: true\r\n"
+                "Content-Length: 1\r\n"
+                "Content-Type: text/plain\r\n"
+                "\r\n";
+
+            boost::beast::http::response_parser<boost::beast::http::string_body> parser;
+            boost::beast::error_code ec;
+            parser.put(boost::asio::buffer(header, sizeof(header) - 1), ec);
+            BEAST_EXPECTS(ec == error::bad_content_length, ec.message());
+        }
+
+        {
+            // multiple content in same header
+            const char header[] =
+                "HTTP/1.1 200 OK\r\n"
+                "Server: nginx\r\n"
+                "Date: Wed, 11 Mar 2020 17:18:19 GMT\r\n"
+                "Content-Type: application/octet-stream\r\n"
+                "Content-Length: 0, 0, 0\r\n"
+                "Connection: keep-alive\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Access-Control-Allow-Methods: GET, OPTIONS, POST\r\n"
+                "Access-Control-Allow-Headers: Authorization, Content-Type, Accept\r\n"
+                "Access-Control-Max-Age: 1728000\r\n"
+                "Access-Control-Allow-Credentials: true\r\n"
+                "Content-Type: text/plain\r\n"
+                "\r\n";
+
+            boost::beast::http::response_parser<boost::beast::http::string_body> parser;
+            boost::beast::error_code ec;
+            parser.put(boost::asio::buffer(header, sizeof(header) - 1), ec);
+            BEAST_EXPECTS(!ec.failed(), ec.message());
+        }
+
+        {
+            // multiple content in same header but mismatch (case 1)
+            const char header[] =
+                "HTTP/1.1 200 OK\r\n"
+                "Server: nginx\r\n"
+                "Date: Wed, 11 Mar 2020 17:18:19 GMT\r\n"
+                "Content-Type: application/octet-stream\r\n"
+                "Content-Length: 0, 0, 1\r\n"
+                "Connection: keep-alive\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Access-Control-Allow-Methods: GET, OPTIONS, POST\r\n"
+                "Access-Control-Allow-Headers: Authorization, Content-Type, Accept\r\n"
+                "Access-Control-Max-Age: 1728000\r\n"
+                "Access-Control-Allow-Credentials: true\r\n"
+                "Content-Type: text/plain\r\n"
+                "\r\n";
+
+            boost::beast::http::response_parser<boost::beast::http::string_body> parser;
+            boost::beast::error_code ec;
+            parser.put(boost::asio::buffer(header, sizeof(header) - 1), ec);
+            BEAST_EXPECTS(ec == error::bad_content_length, ec.message());
+        }
+
+        {
+            // multiple content in same header but mismatch (case 2)
+            const char header[] =
+                "HTTP/1.1 200 OK\r\n"
+                "Server: nginx\r\n"
+                "Date: Wed, 11 Mar 2020 17:18:19 GMT\r\n"
+                "Content-Type: application/octet-stream\r\n"
+                "Content-Length: 0, 0, 0\r\n"
+                "Connection: keep-alive\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Access-Control-Allow-Methods: GET, OPTIONS, POST\r\n"
+                "Access-Control-Allow-Headers: Authorization, Content-Type, Accept\r\n"
+                "Access-Control-Max-Age: 1728000\r\n"
+                "Access-Control-Allow-Credentials: true\r\n"
+                "Content-Length: 1\r\n"
+                "Content-Type: text/plain\r\n"
+                "\r\n";
+
+            boost::beast::http::response_parser<boost::beast::http::string_body> parser;
+            boost::beast::error_code ec;
+            parser.put(boost::asio::buffer(header, sizeof(header) - 1), ec);
+            BEAST_EXPECTS(ec == error::bad_content_length, ec.message());
+        }
+
+    }
+
+    void
     run() override
     {
         testParse();
@@ -366,6 +489,7 @@ public:
         testGotSome();
         testIssue818();
         testIssue1187();
+        testMultipleContentLengthIssue1880();
     }
 };
 
