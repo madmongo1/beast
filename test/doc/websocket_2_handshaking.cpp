@@ -132,6 +132,74 @@ snippets()
 
     //]
     }
+
+    {
+        //[code_websocket_2_6
+
+        // This buffer is required for reading HTTP messages
+        flat_buffer buffer;
+
+        // Read the HTTP request ourselves
+        http::request<http::string_body> req;
+        http::read(sock, buffer, req);
+
+        // See if it's a WebSocket upgrade request
+        if(websocket::is_upgrade(req))
+        {
+            // tokenize the Sec-Websocket-Protocol header offered by the client
+            http::token_list offered { req[http::field::sec_websocket_protocol] };
+
+            // an array of protocols supported by this server
+            // in descending order of preference
+            static const std::array<string_view, 3>
+                supported = {
+                    "v3.my.chat",
+                    "v2.my.chat",
+                    "v1.my.chat"
+                };
+
+            for (auto proto : supported)
+            {
+                auto iter = std::find(offered.begin(), offered.end(), proto);
+                if (iter != offered.end())
+                {
+                    // we found a supported protocol in the list offered by the client
+                    auto active_protocol = std::string(proto.begin(), proto.end());
+
+                    // Construct the stream, transferring ownership of the socket
+                    stream<tcp_stream> ws(std::move(sock));
+
+                    ws.set_option(
+                        stream_base::decorator(
+                            [active_protocol](http::response_header<> &hdr) {
+                                hdr.set(http::field::sec_websocket_protocol, active_protocol);
+                            }));
+
+                    // Accept the upgrade request
+                    ws.accept(req);
+                }
+            }
+
+            // none of our supported protocols were offered
+
+            http::response<http::string_body> resp;
+            resp.result(http::status::bad_request);
+            resp.body() = "No valid sub-protocol was offered."
+                          " This server implements"
+                          " v3.my.chat,"
+                          " v2.my.chat"
+                          " and v1.my.chat";
+            http::write(sock, resp);
+        }
+        else
+        {
+            // Its not a WebSocket upgrade, so
+            // handle it like a normal HTTP request.
+        }
+
+        //]
+    }
+
 }
 
 struct websocket_2_test

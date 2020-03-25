@@ -150,6 +150,19 @@ stream:
 
 [code_websocket_2_5]
 
+[heading Sub Protocols]
+
+The Websocket protocol understands the concept of sub-protocols. If the client
+is requesting one of a set of sub-protocols it will set the header `Sec-Websocket-Protocol`
+in the initial HTTP request. It is up to the server to parse the header and select one of the
+protocols to accept. The server indicates the selected protocol by setting the `Sec-Websocket-Protocol`
+header in the accept header.
+
+This is accomplished by means of a [link beast.ref.boost__beast__websocket__stream_base__decorator `decorator`]:
+
+[code_websocket_2_6]
+
+
 [/-----------------------------------------------------------------------------]
 
 [endsect]
