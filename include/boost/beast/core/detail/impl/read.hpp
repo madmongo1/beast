@@ -16,6 +16,7 @@
 #include <boost/beast/core/read_size.hpp>
 #include <boost/asio/basic_stream_socket.hpp>
 #include <boost/asio/coroutine.hpp>
+#include <boost/asio/compose.hpp>
 #include <boost/throw_exception.hpp>
 
 namespace boost {
@@ -35,47 +36,50 @@ struct dynamic_read_ops
 template<
     class Stream,
     class DynamicBuffer,
-    class Condition,
-    class Handler>
+    class Condition>
 class read_op
     : public asio::coroutine
-    , public async_base<
-        Handler, beast::executor_type<Stream>>
 {
     Stream& s_;
     DynamicBuffer& b_;
     Condition cond_;
     error_code ec_;
     std::size_t total_ = 0;
+    bool continuation_ = false;
 
 public:
     read_op(read_op&&) = default;
 
-    template<class Handler_, class Condition_>
+    template<class Condition_>
     read_op(
-        Handler_&& h,
         Stream& s,
         DynamicBuffer& b,
         Condition_&& cond)
-        : async_base<Handler,
-            beast::executor_type<Stream>>(
-                std::forward<Handler_>(h),
-                    s.get_executor())
-        , s_(s)
+        : s_(s)
         , b_(b)
         , cond_(std::forward<Condition_>(cond))
     {
-        (*this)({}, 0, false);
     }
 
+    bool check_continuation()
+    {
+        auto result = continuation_;
+        continuation_ = true;
+        return result;
+    }
+
+    template<class Self>
     void
     operator()(
-        error_code ec,
-        std::size_t bytes_transferred,
-        bool cont = true)
+        Self& self,
+        error_code ec = error_code(),
+        std::size_t bytes_transferred = 0)
     {
+        // first time through is not a continuation
+        bool const cont = check_continuation();
+
         std::size_t max_prepare;
-        BOOST_ASIO_CORO_REENTER(*this)
+        BOOST_ASIO_CORO_REENTER(this)
         {
             for(;;)
             {
@@ -84,7 +88,7 @@ public:
                     break;
                 BOOST_ASIO_CORO_YIELD
                 s_.async_read_some(
-                    b_.prepare(max_prepare), std::move(*this));
+                    b_.prepare(max_prepare), std::move(self));
                 b_.commit(bytes_transferred);
                 total_ += bytes_transferred;
             }
@@ -95,16 +99,30 @@ public:
                 ec_ = ec;
                 BOOST_ASIO_CORO_YIELD
                 s_.async_read_some(
-                    b_.prepare(0), std::move(*this));
+                    b_.prepare(0), std::move(self));
                 ec = ec_;
             }
-            this->complete_now(ec, total_);
+            self.complete(ec, total_);
         }
     }
 };
 
-//------------------------------------------------------------------------------
+template<class AsyncReadStream, class DynamicBuffer, class Condition>
+static
+read_op<AsyncReadStream, DynamicBuffer, typename std::decay<Condition>::type>
+make_read_op(
+    AsyncReadStream& s,
+    DynamicBuffer& b,
+    Condition&& c)
+{
+    return read_op<AsyncReadStream,
+        DynamicBuffer,
+        typename std::decay<Condition>::type>(
+            s, b, std::forward<Condition>(c));
+}
 
+//------------------------------------------------------------------------------
+/*
 struct run_read_op
 {
     template<
@@ -140,7 +158,7 @@ struct run_read_op
     }
 
 };
-
+*/
 };
 
 //------------------------------------------------------------------------------
@@ -232,6 +250,16 @@ async_read(
         detail::is_invocable<CompletionCondition,
             void(error_code&, std::size_t, DynamicBuffer&)>::value,
         "CompletionCondition type requirements not met");
+
+    return net::async_compose<
+        ReadHandler,
+        void(error_code, std::size_t)>(
+            dynamic_read_ops::make_read_op(
+                stream,
+                buffer,
+                std::forward<CompletionCondition>(cond)),
+            handler, stream);
+/*
     return net::async_initiate<
         ReadHandler,
         void(error_code, std::size_t)>(
@@ -240,6 +268,7 @@ async_read(
             &stream,
             &buffer,
             std::forward<CompletionCondition>(cond));
+            */
 }
 
 } // detail
