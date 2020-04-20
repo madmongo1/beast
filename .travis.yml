@@ -70,7 +70,7 @@ matrix:
 
     # GCC 6.0, Debug + Coverage
     - os: linux
-      dist: trusty
+      dist: bionic
       compiler: g++-6
       env:
         - VARIANT=beast_coverage
@@ -91,7 +91,7 @@ matrix:
 
     # Default clang++ with libc++
     - os: linux
-      dist: trusty
+      dist: bionic
       compiler: clang++-libc++
       env:
         - VARIANT=debug
@@ -107,7 +107,7 @@ matrix:
 
     # GCC 5.0, Valgrind
     - os: linux
-      dist: trusty
+      dist: bionic
       compiler: g++-5
       env:
         - VARIANT=beast_valgrind
