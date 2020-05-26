@@ -416,6 +416,11 @@ public:
             "\r\n");
     }
 
+    void testChunkedBodySize()
+    {
+
+    }
+
     void
     run() override
     {
@@ -426,6 +431,7 @@ public:
         testIssue818();
         testIssue1187();
         testIssue1880();
+        testChunkedBodySize();
     }
 };
 
