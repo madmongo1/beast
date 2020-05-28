@@ -20,12 +20,90 @@
 #include <boost/beast/core/ostream.hpp>
 #include <boost/beast/http/read.hpp>
 #include <boost/beast/http/string_body.hpp>
+#include <boost/asio/buffers_iterator.hpp>
 #include <boost/system/system_error.hpp>
 #include <algorithm>
+#include <iterator>
 
 namespace boost {
 namespace beast {
 namespace http {
+
+namespace {
+
+template<std::size_t Min>
+struct all_or_nothing_body : string_body
+{
+    using value_type = std::string;
+
+    /*
+     *     std::declval<typename T::reader&>().init(
+boost::optional<std::uint64_t>(),
+std::declval<error_code&>()),
+std::declval<std::size_t&>() =
+std::declval<typename T::reader&>().put(
+    std::declval<net::const_buffer>(),
+    std::declval<error_code&>()),
+std::declval<typename T::reader&>().finish(
+std::declval<error_code&>())
+)>> : std::integral_constant<bool,
+(std::is_constructible<typename T::reader,
+    header<true, detail::fields_model>&,
+        typename T::value_type&>::value &&
+std::is_constructible<typename T::reader,
+    header<false,detail::fields_model>&,
+        typename T::value_type&>::value)
+>
+
+     */
+    struct reader
+    {
+        template<bool isRequest, class Fields>
+        reader(header<isRequest, Fields>& hdr, value_type& v)
+            : v_(v)
+        {
+            boost::ignore_unused(hdr);
+        }
+
+
+        void init(boost::optional<std::uint64_t>, error_code&)
+        {
+
+        }
+
+        template<class ConstBufferSequence>
+        std::size_t put(ConstBufferSequence const& bufs, error_code& ec )
+        {
+            if (buffer_bytes(bufs) < Min)
+            {
+                ec = error::need_more;
+                return 0;
+            }
+            else
+            {
+                std::size_t total = 0;
+                for (auto i = net::buffer_sequence_begin(bufs) ; i != net::buffer_sequence_begin(bufs) ; ++i)
+                {
+                    auto&& buf = *i;
+                    v_.append(reinterpret_cast<const char *>(buf.data()), buf.size());
+                    total += buf.size();
+                }
+                return total;
+            }
+        }
+
+        void finish(error_code& ec)
+        {
+            if (v_.size() < Min)
+                ec = error::need_more;
+        }
+
+        value_type& v_;
+
+    };
+};
+
+}
 
 class parser_test
     : public beast::unit_test::suite
@@ -465,9 +543,49 @@ public:
         }
     }
 
+    void testIssue1897()
+    {
+        string_view resp1 =
+            "HTTP/1.1 200 OK\r\n"
+            "Server: test\r\n"
+            "Transfer-Encoding: chunked\r\n"
+            "\r\n"
+
+            // chunk 1
+            "4\r\n"
+            "Wiki\r\n"
+
+            // chunk 2
+            "5\r\n"
+            "pedia\r\n";
+
+        string_view resp2 =
+            // chunk 3
+            "E\r\n"
+            " in\r\n"
+            "\r\n"
+            "chunks.\r\n"
+
+            // end
+            "0\r\n"
+            "\r\n";
+
+        response_parser<all_or_nothing_body<23>> p;
+        p.eager(true);
+        error_code ec;
+        auto s1 = p.put(net::buffer(resp1.data(), resp1.size()), ec);
+        BEAST_EXPECTS(ec.message() == "need more", ec.message());
+        BEAST_EXPECTS(s1 == 30, std::to_string(s1));
+        auto s2 = p.put(net::buffer(resp2.data(), resp2.size()), ec);
+        BEAST_EXPECTS(ec.message() == "Success", ec.message());
+        BEAST_EXPECTS(s2 == 30, std::to_string(s2));
+
+    }
+
     void
     run() override
     {
+        testIssue1897();
         testParse();
         testNeedMore<flat_buffer>();
         testNeedMore<multi_buffer>();
