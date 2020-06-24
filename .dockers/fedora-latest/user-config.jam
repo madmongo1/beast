@@ -1,3 +1,8 @@
+using clang : latest : clang++ : <cxxstd>"latest"
+using clang : latest~nodep : clang++ : <cxxstd>"latest" <cxxflags>"-DBOOST_ASIO_NO_DEPRECATED"
+using clang : latest~nots : clang++ : <cxxstd>"latest" <cxxflags>"-DBOOST_ASIO_NO_TS_EXECUTORS"
+using clang : latest~nodep~nots : clang++ : <cxxstd>"latest" <cxxflags>"-DBOOST_ASIO_NO_DEPRECATED -DBOOST_ASIO_NO_TS_EXECUTORS"
+
 using gcc : 8 : g++-8 : ;
 using gcc : 8~c++98 : g++-8 : <cxxflags>"-std=c++98" ;
 using gcc : 8~c++98~O2 : g++-8 : <cxxflags>"-std=c++98 -O2" ;

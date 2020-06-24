@@ -16,6 +16,11 @@
 #include <boost/asio/strand.hpp>
 #include <memory>
 #include <type_traits>
+#ifdef BOOST_ASIO_NO_TS_EXECUTORS
+#include <boost/asio/execution/context.hpp>
+#include <boost/asio/execution_context.hpp>
+#endif
+
 
 namespace boost {
 namespace beast {
@@ -34,7 +39,14 @@ inline
 net::io_context*
 get_io_context(net::io_context::executor_type const& ex)
 {
+#ifdef BOOST_ASIO_NO_TS_EXECUTORS
+    return std::addressof(
+        boost::asio::query(
+            ex,
+            boost::asio::execution::context));
+#else
     return std::addressof(ex.context());
+#endif
 }
 
 inline
@@ -42,8 +54,15 @@ net::io_context*
 get_io_context(net::strand<
     net::io_context::executor_type> const& ex)
 {
+#ifdef BOOST_ASIO_NO_TS_EXECUTORS
+    return std::addressof(
+        boost::asio::query(
+            ex,
+            boost::asio::execution::context));
+#else
     return std::addressof(
         ex.get_inner_executor().context());
+#endif
 }
 
 template<class Executor>
@@ -64,7 +83,7 @@ get_io_context(T const& ex)
         net::io_context::executor_type>();
     if(! p)
         return nullptr;
-    return std::addressof(p->context());
+    return get_io_context(*p);
 }
 
 inline

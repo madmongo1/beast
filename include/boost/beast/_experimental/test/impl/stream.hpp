@@ -12,10 +12,12 @@
 
 #include <boost/beast/core/bind_handler.hpp>
 #include <boost/beast/core/buffer_traits.hpp>
-#include <boost/beast/core/detail/service_base.hpp>
 #include <boost/beast/core/detail/is_invocable.hpp>
+#include <boost/beast/core/detail/service_base.hpp>
+#include <boost/beast/core/detail/work_guard.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/post.hpp>
+#include <boost/asio/bind_executor.hpp>
 #include <mutex>
 #include <stdexcept>
 #include <vector>
@@ -74,7 +76,7 @@ class stream::read_op : public stream::read_op_base
         Handler h_;
         boost::weak_ptr<state> wp_;
         Buffers b_;
-        net::executor_work_guard<ex2_type> wg2_;
+        beast::detail::work_guard<ex2_type> wg2_;
 
         lambda(lambda&&) = default;
         lambda(lambda const&) = default;
@@ -132,7 +134,7 @@ class stream::read_op : public stream::read_op_base
     };
 
     lambda fn_;
-    net::executor_work_guard<ex1_type> wg1_;
+    beast::detail::work_guard<ex1_type> wg1_;
 
 public:
     template<class Handler_>
@@ -148,8 +150,10 @@ public:
     void
     operator()(error_code ec) override
     {
-        net::post(wg1_.get_executor(),
-            beast::bind_front_handler(std::move(fn_), ec));
+        net::post(
+            net::bind_executor(
+                wg1_.get_executor(),
+                beast::bind_front_handler(std::move(fn_), ec)));
         wg1_.reset();
     }
 };

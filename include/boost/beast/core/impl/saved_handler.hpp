@@ -11,6 +11,7 @@
 #define BOOST_BEAST_CORE_IMPL_SAVED_HANDLER_HPP
 
 #include <boost/beast/core/detail/allocator.hpp>
+#include <boost/beast/core/detail/work_guard.hpp>
 #include <boost/asio/associated_allocator.hpp>
 #include <boost/asio/associated_executor.hpp>
 #include <boost/asio/executor_work_guard.hpp>
@@ -63,7 +64,7 @@ class saved_handler::impl final : public base
     };
 
     ebo_pair v_;
-    net::executor_work_guard<
+    detail::work_guard<
         net::associated_executor_t<Handler>> wg2_;
 
 public:

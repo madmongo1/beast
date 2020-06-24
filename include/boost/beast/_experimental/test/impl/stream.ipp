@@ -359,7 +359,7 @@ teardown(
 stream
 connect(stream& to)
 {
-    stream from{to.get_executor().context()};
+    stream from{to.get_executor()};
     from.connect(to);
     return from;
 }

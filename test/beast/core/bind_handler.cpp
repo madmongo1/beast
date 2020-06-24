@@ -12,6 +12,7 @@
 
 #include "test_handler.hpp"
 
+#include <boost/beast/core/detail/get_io_context.hpp>
 #include <boost/beast/core/detail/type_traits.hpp>
 #include <boost/beast/_experimental/unit_test/suite.hpp>
 #include <boost/beast/_experimental/test/stream.hpp>
@@ -20,6 +21,7 @@
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/defer.hpp>
+#include <boost/asio/dispatch.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/strand.hpp>
 #include <boost/bind/placeholders.hpp>
@@ -109,9 +111,10 @@ public:
         net::io_context&
         context() const noexcept
         {
-            return ex_.context();
+            return *detail::get_io_context(ex_);
         }
 
+#if !defined(BOOST_ASIO_NO_TS_EXECUTORS)
         void on_work_started() const noexcept
         {
             ex_.on_work_started();
@@ -121,12 +124,14 @@ public:
         {
             ex_.on_work_finished();
         }
+#endif
 
         template<class F, class Alloc>
         void dispatch(F&& f, Alloc const& a)
         {
             s_.on_invoke();
-            ex_.dispatch(std::forward<F>(f), a);
+            net::dispatch(net::bind_executor(ex_, std::forward<F>(f)));
+//            ex_.dispatch(std::forward<F>(f), a);
         }
 
         template<class F, class Alloc>

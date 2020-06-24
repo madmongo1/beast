@@ -189,6 +189,10 @@ class stream
 public:
     using buffer_type = flat_buffer;
 
+    /// The type of the executor associated with the object.
+    using executor_type =
+        net::io_context::executor_type;
+
     /** Destructor
 
         If an asynchronous read operation is pending, it will
@@ -229,6 +233,18 @@ public:
     BOOST_BEAST_DECL
     explicit
     stream(net::io_context& ioc);
+
+
+    /** Construct a stream
+
+    The stream will be created in a disconnected state.
+
+    @param exec The `executor` object that the stream will use to
+    dispatch handlers for any asynchronous operations.
+    */
+    BOOST_BEAST_DECL
+    explicit
+    stream(executor_type const& exec);
 
     /** Construct a stream
 
@@ -287,10 +303,6 @@ public:
     BOOST_BEAST_DECL
     void
     connect(stream& remote);
-
-    /// The type of the executor associated with the object.
-    using executor_type =
-        net::io_context::executor_type;
 
     /// Return the executor associated with the object.
     executor_type

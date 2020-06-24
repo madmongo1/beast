@@ -1,4 +1,5 @@
 FROM fedora:32
+ENV boost_commit develop
 
 RUN dnf update -y
 RUN dnf -y groupinstall "Development Tools"
@@ -18,5 +19,5 @@ COPY tools /devel/boost/libs/beast/tools/
 
 #RUN cd libs/beast && git checkout develop && git pull origin develop
 RUN ./bootstrap.sh
-RUN ./b2 toolset=gcc variant=release cxxstd=2a headers
+RUN ./b2 toolset=clang-10 variant=release headers
 #RUN ./b2 toolset=gcc,clang variant=release cxxstd=2a,17,14,11 -j`grep processor /proc/cpuinfo | wc -l` libs/beast//test

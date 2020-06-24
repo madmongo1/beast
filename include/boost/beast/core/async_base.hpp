@@ -14,6 +14,7 @@
 #include <boost/beast/core/bind_handler.hpp>
 #include <boost/beast/core/detail/allocator.hpp>
 #include <boost/beast/core/detail/async_base.hpp>
+#include <boost/beast/core/detail/work_guard.hpp>
 #include <boost/asio/associated_allocator.hpp>
 #include <boost/asio/associated_executor.hpp>
 #include <boost/asio/bind_executor.hpp>
@@ -186,7 +187,7 @@ class async_base
         "Executor type requirements not met");
 
     Handler h_;
-    net::executor_work_guard<Executor1> wg1_;
+    detail::work_guard<Executor1> wg1_;
 
     virtual
     void
