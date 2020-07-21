@@ -64,6 +64,12 @@ serializer(value_type& m)
 {
 }
 
+#define BOOST_BEAST_HTTP_SERIALIZER_VISIT(I) \
+    pv_.template emplace<I>(limit_, v_.template get<I>()); \
+        visit(ec, beast::detail::make_buffers_ref( \
+                pv_.template get<I>()))
+
+
 template<
     bool isRequest, class Body, class Fields>
 template<class Visit>
@@ -75,16 +81,19 @@ next(error_code& ec, Visit&& visit)
     {
     case do_construct:
     {
+/*
         fwrinit(std::integral_constant<bool,
             isRequest>{});
         if(m_.chunked())
             goto go_init_c;
         s_ = do_init;
+*/
         BOOST_FALLTHROUGH;
     }
 
     case do_init:
     {
+/*
         wr_.init(ec);
         if(ec)
             return;
@@ -103,11 +112,13 @@ next(error_code& ec, Visit&& visit)
             fwr_->get(),
             result->first);
         s_ = do_header;
+*/
         BOOST_FALLTHROUGH;
     }
 
     case do_header:
-        do_visit<2>(ec, visit);
+        BOOST_BEAST_HTTP_SERIALIZER_VISIT(2);
+//            do_visit<2>(ec, visit);
         break;
 
     go_header_only:
@@ -115,7 +126,7 @@ next(error_code& ec, Visit&& visit)
         s_ = do_header_only;
         BOOST_FALLTHROUGH;
     case do_header_only:
-        do_visit<1>(ec, visit);
+        BOOST_BEAST_HTTP_SERIALIZER_VISIT(1);
         break;
 
     case do_body:
@@ -124,6 +135,7 @@ next(error_code& ec, Visit&& visit)
 
     case do_body + 1:
     {
+/*
         auto result = wr_.get(ec);
         if(ec)
             return;
@@ -132,20 +144,23 @@ next(error_code& ec, Visit&& visit)
         more_ = result->second;
         v_.template emplace<3>(result->first);
         s_ = do_body + 2;
+*/
         BOOST_FALLTHROUGH;
     }
 
     case do_body + 2:
-        do_visit<3>(ec, visit);
+        BOOST_BEAST_HTTP_SERIALIZER_VISIT(3);
         break;
 
     //----------------------------------------------------------------------
 
-        go_init_c:
+    go_init_c:
         s_ = do_init_c;
         BOOST_FALLTHROUGH;
+
     case do_init_c:
     {
+/*
         wr_.init(ec);
         if(ec)
             return;
@@ -184,11 +199,12 @@ next(error_code& ec, Visit&& visit)
             result->first,
             chunk_crlf{});
         s_ = do_header_c;
+*/
         BOOST_FALLTHROUGH;
     }
 
     case do_header_c:
-        do_visit<4>(ec, visit);
+        BOOST_BEAST_HTTP_SERIALIZER_VISIT(4);
         break;
 
     go_header_only_c:
@@ -197,7 +213,7 @@ next(error_code& ec, Visit&& visit)
         BOOST_FALLTHROUGH;
 
     case do_header_only_c:
-        do_visit<1>(ec, visit);
+        BOOST_BEAST_HTTP_SERIALIZER_VISIT(1);
         break;
 
     case do_body_c:
@@ -206,6 +222,7 @@ next(error_code& ec, Visit&& visit)
 
     case do_body_c + 1:
     {
+/*
         auto result = wr_.get(ec);
         if(ec)
             return;
@@ -235,39 +252,42 @@ next(error_code& ec, Visit&& visit)
             result->first,
             chunk_crlf{});
         s_ = do_body_c + 2;
+*/
         BOOST_FALLTHROUGH;
     }
 
     case do_body_c + 2:
-        do_visit<5>(ec, visit);
+        BOOST_BEAST_HTTP_SERIALIZER_VISIT(5);
         break;
 
     go_body_final_c:
         s_ = do_body_final_c;
         BOOST_FALLTHROUGH;
     case do_body_final_c:
-        do_visit<6>(ec, visit);
+        BOOST_BEAST_HTTP_SERIALIZER_VISIT(6);
         break;
 
     go_all_c:
         s_ = do_all_c;
         BOOST_FALLTHROUGH;
     case do_all_c:
-        do_visit<7>(ec, visit);
+        BOOST_BEAST_HTTP_SERIALIZER_VISIT(7);
         break;
 
     go_final_c:
     case do_final_c:
+/*
         v_.template emplace<8>(
             boost::in_place_init,
             detail::chunk_last(),
             net::const_buffer{nullptr, 0},
             chunk_crlf{});
         s_ = do_final_c + 1;
+*/
         BOOST_FALLTHROUGH;
 
     case do_final_c + 1:
-        do_visit<8>(ec, visit);
+        BOOST_BEAST_HTTP_SERIALIZER_VISIT(8);
         break;
 
     //----------------------------------------------------------------------
