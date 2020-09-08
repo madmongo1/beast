@@ -97,7 +97,55 @@ public:
     }
 };
 
+#if !defined(BOOST_ASIO_HAS_DEDUCED_EXECUTE_MEMBER_TRAIT)
+}}
+
+//#include <boost/asio/traits/execute_member.hpp>
+
+namespace boost {
+namespace asio {
+namespace traits {
+
+template <typename F>
+struct execute_member<boost::beast::simple_executor, F>
+{
+    static const bool is_valid = true;
+    static const bool is_noexcept = false;
+    typedef void result_type;
+};
+
+template <>
+struct equality_comparable<boost::beast::simple_executor>
+{
+    static const bool is_valid = true;
+    static const bool is_noexcept = true;
+};
+
+}
+}
+}
+
+namespace boost {
+namespace beast {
+#endif
+
 #if defined(BOOST_ASIO_NO_TS_EXECUTORS)
+using F = boost::asio::execution::invocable_archetype;
+using T = simple_executor;
+
+    BOOST_STATIC_ASSERT(std::conditional<true, std::true_type,
+            typename std::result_of<typename std::decay<F>::type&()>::type
+    >::type::value);
+    BOOST_STATIC_ASSERT(std::is_constructible<typename std::decay<F>::type, F>::value);
+    BOOST_STATIC_ASSERT(std::is_move_constructible<typename std::decay<F>::type>::value);
+//    BOOST_STATIC_ASSERT(BOOST_ASIO_HAS_DEDUCED_EXECUTE_MEMBER_TRAIT);
+    BOOST_STATIC_ASSERT(boost::asio::execution::can_execute<T, F>::value);
+BOOST_STATIC_ASSERT(std::is_nothrow_copy_constructible<T>::value);
+BOOST_STATIC_ASSERT(std::is_nothrow_destructible<T>::value);
+BOOST_STATIC_ASSERT(boost::asio::traits::equality_comparable<T>::is_valid);
+BOOST_STATIC_ASSERT(boost::asio::traits::equality_comparable<T>::is_noexcept);
+
+
 BOOST_STATIC_ASSERT(net::execution::is_executor<simple_executor>::value);
 #endif
 

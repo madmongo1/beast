@@ -103,6 +103,10 @@ public:
             test_executor const&) = default;
 
         test_executor(
+                bind_handler_test& s,
+                net::io_context& ioc);
+
+        test_executor(
             bind_handler_test& s,
             net::io_context& ioc)
             : s_(s)
@@ -622,6 +626,38 @@ public:
         testJavadocs();
     }
 };
+
+#if !defined(BOOST_ASIO_HAS_DEDUCED_EXECUTE_MEMBER_TRAIT)
+    }}
+
+//#include <boost/asio/traits/execute_member.hpp>
+
+namespace boost {
+    namespace asio {
+        namespace traits {
+
+            template <typename F>
+            struct execute_member<boost::beast::test_executor, F>
+            {
+                static const bool is_valid = true;
+                static const bool is_noexcept = false;
+                typedef void result_type;
+            };
+
+            template <>
+            struct equality_comparable<boost::beast::test_executor>
+            {
+                static const bool is_valid = true;
+                static const bool is_noexcept = true;
+            };
+
+        }
+    }
+}
+
+namespace boost {
+    namespace beast {
+#endif
 
 BEAST_DEFINE_TESTSUITE(beast,core,bind_handler);
 
